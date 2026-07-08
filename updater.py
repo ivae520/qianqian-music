@@ -52,6 +52,9 @@ def _find_asset(release: dict) -> Optional[dict]:
     for a in release.get("assets", []):
         if a.get("name", "").lower().endswith(".zip"):
             return a
+    for a in release.get("assets", []):
+        if a.get("name", "").lower().endswith(".exe"):
+            return a
     return None
 
 
