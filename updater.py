@@ -47,6 +47,10 @@ def _is_newer(remote: str, local: str) -> bool:
 def _find_asset(release: dict) -> Optional[dict]:
     for a in release.get("assets", []):
         name = a.get("name", "").lower()
+        if name.endswith(".zip") and ("qianqian" in name or "千千动听" in name):
+            return a
+    for a in release.get("assets", []):
+        name = a.get("name", "").lower()
         if name.endswith(".exe") and ("千千动听" in name or "qianqian" in name):
             return a
     for a in release.get("assets", []):
@@ -343,7 +347,7 @@ class UpdateDialog(QWidget):
         self._header.set_info("发现新版本", f"v{self._current_ver} → v{remote_ver}")
         if asset:
             self._asset_url = asset.get("browser_download_url", "")
-            self._asset_name = asset.get("name", "千千动听.exe")
+            self._asset_name = asset.get("name", "QianqianMusic.zip")
             sz = asset.get("size", 0)
             sz_str = f"  ({sz / 1048576:.1f} MB)" if sz else ""
             self._status.setText(f"发现新版本，点击立即更新{sz_str}")
@@ -364,7 +368,7 @@ class UpdateDialog(QWidget):
         if self._dl_worker and self._dl_worker.isRunning():
             return
         target_dir = tempfile.mkdtemp(prefix="qianqian_update_")
-        target = os.path.join(target_dir, self._asset_name or "千千动听.exe")
+        target = os.path.join(target_dir, self._asset_name or "QianqianMusic.zip")
         self._progress.setVisible(True)
         self._progress.setValue(0)
         self._btn_action.setVisible(False)
@@ -404,12 +408,44 @@ class UpdateDialog(QWidget):
             self.raise_()
             self.activateWindow()
 
+    def _extract_exe(self, path: str) -> Optional[str]:
+        """从 zip 包中提取 exe，返回 exe 路径；若本身是 exe 则原样返回"""
+        if path.lower().endswith(".exe"):
+            return path
+        if not path.lower().endswith(".zip"):
+            return None
+        import zipfile
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                names = zf.namelist()
+                target = None
+                for n in names:
+                    if n.lower().endswith(".exe") and ("千千动听" in n or "qianqian" in n):
+                        target = n
+                        break
+                if not target:
+                    for n in names:
+                        if n.lower().endswith(".exe"):
+                            target = n
+                            break
+                if not target:
+                    return None
+                extract_dir = tempfile.mkdtemp(prefix="qianqian_extract_")
+                zf.extract(target, extract_dir)
+                return os.path.join(extract_dir, target)
+        except Exception:
+            return None
+
     def _apply_update(self):
         if not self._downloaded_path or not os.path.exists(self._downloaded_path):
             return
         exe = sys.executable if getattr(sys, "frozen", False) else None
         if not exe:
             self._status.setText("非打包版本，无法自动安装")
+            return
+        new_exe = self._extract_exe(self._downloaded_path)
+        if not new_exe or not os.path.exists(new_exe):
+            self._status.setText("无法从下载文件中提取程序")
             return
         old_path = exe + ".old"
         try:
@@ -422,7 +458,7 @@ class UpdateDialog(QWidget):
         except Exception as e:
             self._status.setText(f"无法替换程序文件：{e}")
             return
-        shutil.move(self._downloaded_path, exe)
+        shutil.move(new_exe, exe)
         subprocess.Popen([exe])
         QApplication.quit()
 
